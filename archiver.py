@@ -3,6 +3,7 @@ import yt_dlp
 import os
 import sys
 import shlex
+import re
 import traceback
 
 
@@ -28,15 +29,33 @@ def read_archive_file(filename="archiveme.txt"):
     return url, extra_args
 
 
+def make_combined_filter(title_regex=None):
+    """Return a callable that skips Shorts and non-matching titles."""
+    regex = re.compile(title_regex, re.IGNORECASE) if title_regex else None
+
+    def _filter(info):
+        # Block obvious YouTube Shorts
+        if info.get("duration") and info["duration"] < 60:
+            return "short video (<60s)"
+        if "/shorts/" in info.get("webpage_url", ""):
+            return "YouTube Shorts URL"
+        # Apply match-title regex if given
+        if regex and not regex.search(info.get("title", "")):
+            return f"title doesn't match {regex.pattern}"
+        return None
+    return _filter
+
+
 def apply_manual_args(opts, args):
     """Merge a small whitelist of CLI flags into opts."""
     i = 0
+    title_pattern = None
     while i < len(args):
         arg = args[i]
         nxt = args[i + 1] if i + 1 < len(args) else None
         try:
             if arg == "--match-title" and nxt:
-                opts["match_title"] = nxt
+                title_pattern = nxt
                 i += 1
             elif arg == "--reject-title" and nxt:
                 opts["reject_title"] = nxt
@@ -53,8 +72,11 @@ def apply_manual_args(opts, args):
             elif arg == "--no-overwrites":
                 opts["nooverwrites"] = False
         except Exception as e:
-            print(f"Ignoring malformed argument '{arg}': {e}")
+            print(f"⚠️  Ignoring malformed argument '{arg}': {e}")
         i += 1
+
+    # Always rebuild the combined filter (handles Shorts + optional title)
+    opts["match_filter"] = make_combined_filter(title_pattern)
     return opts
 
 
@@ -68,15 +90,22 @@ def build_opts(extra_args, debug=False):
         "continuedl": True,
         "download_archive": "downloaded.txt",
         "cookiefile": "youtube.com_cookies.txt",
-        "outtmpl": "%(title)s [%(id)s] %(uploader)s.%(ext)s",
+        "outtmpl": "%(title)s [%(id)s].%(ext)s",
         "prefer_ffmpeg": True,
-        "match_filter": yt_dlp.utils.match_filter_func("!is_short"),
+        "match_filter": make_combined_filter(None),
         "postprocessors": [{
             "key": "FFmpegExtractAudio",
             "preferredcodec": "flac",
             "preferredquality": "0",
             "when": "post_process",
-        }],
+        },
+         # Step 2 – add tags from yt-dlp metadata
+       {
+           "key": "FFmpegMetadata",
+           "add_metadata": True,
+           "when": "post_process",
+       },
+  ],
     }
 
     if extra_args:
@@ -92,14 +121,13 @@ def build_opts(extra_args, debug=False):
 
 def main():
     debug = "--debug" in sys.argv
-    # remove our own flag so yt-dlp never sees it
-    sys.argv = [arg for arg in sys.argv if arg != "--debug"]
+    sys.argv = [a for a in sys.argv if a != "--debug"]
 
     try:
         url, extra_args = read_archive_file()
         opts = build_opts(extra_args, debug=debug)
 
-        print(f"Downloading from: {url}")
+        print(f"▶️  Downloading from: {url}")
         if extra_args:
             print(f"   Extra args: {' '.join(extra_args)}")
 
@@ -116,20 +144,20 @@ def main():
             with yt_dlp.YoutubeDL(opts) as ydl:
                 ydl.download([url])
         except yt_dlp.utils.DownloadError as e:
-            print(f"yt-dlp download error: {e}")
+            print(f"❌ yt-dlp download error: {e}")
             sys.exit(2)
 
-        print("Download complete.")
+        print("✅ Download complete.")
         sys.exit(0)
 
     except (FileNotFoundError, ValueError) as e:
-        print(f"Configuration error: {e}")
+        print(f"⚠️  Configuration error: {e}")
         sys.exit(1)
     except KeyboardInterrupt:
         print("\n⏹ Interrupted by user.")
         sys.exit(130)
     except Exception:
-        print("Unexpected error:")
+        print("💥 Unexpected error:")
         traceback.print_exc()
         sys.exit(99)
 
