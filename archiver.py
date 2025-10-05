@@ -53,7 +53,7 @@ def apply_manual_args(opts, args):
             elif arg == "--no-overwrites":
                 opts["nooverwrites"] = False
         except Exception as e:
-            print(f"⚠️  Ignoring malformed argument '{arg}': {e}")
+            print(f"Ignoring malformed argument '{arg}': {e}")
         i += 1
     return opts
 
@@ -99,7 +99,7 @@ def main():
         url, extra_args = read_archive_file()
         opts = build_opts(extra_args, debug=debug)
 
-        print(f"▶️  Downloading from: {url}")
+        print(f"Downloading from: {url}")
         if extra_args:
             print(f"   Extra args: {' '.join(extra_args)}")
 
@@ -116,20 +116,20 @@ def main():
             with yt_dlp.YoutubeDL(opts) as ydl:
                 ydl.download([url])
         except yt_dlp.utils.DownloadError as e:
-            print(f"❌ yt-dlp download error: {e}")
+            print(f"yt-dlp download error: {e}")
             sys.exit(2)
 
-        print("✅ Download complete.")
+        print("Download complete.")
         sys.exit(0)
 
     except (FileNotFoundError, ValueError) as e:
-        print(f"⚠️  Configuration error: {e}")
+        print(f"Configuration error: {e}")
         sys.exit(1)
     except KeyboardInterrupt:
         print("\n⏹ Interrupted by user.")
         sys.exit(130)
     except Exception:
-        print("💥 Unexpected error:")
+        print("Unexpected error:")
         traceback.print_exc()
         sys.exit(99)
 
